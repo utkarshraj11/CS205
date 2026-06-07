@@ -1,7 +1,7 @@
 import numpy as np
 import sys
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import LeaveOneOut
+# from sklearn.neighbors import KNeighborsClassifier
+# from sklearn.model_selection import LeaveOneOut
 
 def load_data(filename):
     data = np.loadtxt(filename)
@@ -12,14 +12,16 @@ def load_data(filename):
 
 # Baseline accuracy function: leave-one-out cross-validation
 def loo_accuracy(labels, features, feature_subset):
+    """
     # https://scikit-learn.org/stable/modules/cross_validation.html
     # https://medium.com/@pacosun/one-out-all-in-leave-one-out-cross-validation-explained-409df5ff6385
 
-    X = features[:, list(feature_subset)]
+    X = features[:, list(feature_subset)]   # select only the features in the subset
     n = len(labels)
     loo = LeaveOneOut()
     correct = 0
     for train_index, test_index in loo.split(X):
+        
         X_train, X_test = X[train_index], X[test_index]
         y_train, y_test = labels[train_index], labels[test_index]
         knn = KNeighborsClassifier(n_neighbors=1)
@@ -27,23 +29,33 @@ def loo_accuracy(labels, features, feature_subset):
         y_pred = knn.predict(X_test)
         if y_pred[0] == y_test[0]:
             correct += 1
-        
+    """ 
+    X = features[:, list(feature_subset)]
+    n = len(labels)
+    correct = 0
+    for i in range(n):
+        diffs = X - X[i]    # compute difference to all other points
+        dists = np.einsum('ij,ij->i', diffs, diffs) # squared L2 distance
+        dists[i] = np.inf   # ignore self by setting distance to infinity
+        if labels[np.argmin(dists)] == labels[i]:   # check if nearest neighbor has the same label
+            correct += 1
+
     return correct / n
 
 
-def forward_selection(labels, features):
+def forward_selection(labels, features):    # Start with an empty set of features and iteratively add the feature that gives the best accuracy until no improvement is observed.
     # https://www.geeksforgeeks.org/machine-learning/sequential-feature-selection/
 
-    n, total_features = features.shape
+    total_features = features.shape[1]
     current_set = set()
     best_overall_set = set()
     best_overall_acc = 0.0
 
     print(f"\nBeginning Forward Selection search.\n")
 
-    for level in range(total_features):
-        best_acc_this_level = -1
-        best_feature_this_level = None
+    for _ in range(total_features):
+        best_acc_level = -1
+        best_feat_level = None
 
         for f in range(total_features):
             if f in current_set:    # already included, skip
@@ -53,20 +65,20 @@ def forward_selection(labels, features):
             feat_display = sorted(f + 1 for f in candidate) # 1-indexed for display
             print(f"        Using feature(s) {{{','.join(map(str, feat_display))}}} accuracy is {acc * 100:.1f}%")
 
-            if acc > best_acc_this_level:
-                best_acc_this_level = acc
-                best_feature_this_level = f
+            if acc > best_acc_level:
+                best_acc_level = acc
+                best_feat_level = f
 
-        current_set = current_set | {best_feature_this_level}   # Add the best feature of this level
+        current_set = current_set | {best_feat_level}   # Add the best feature of this level
         feat_display = sorted(f + 1 for f in current_set)
 
-        if best_acc_this_level > best_overall_acc:
-            best_overall_acc = best_acc_this_level
+        if best_acc_level > best_overall_acc:
+            best_overall_acc = best_acc_level
             best_overall_set = set(current_set) # copy current set
         else:
             print(f"\n(Warning, Accuracy has decreased! Continuing search in case of local maxima)")
 
-        print(f"\nFeature set {{{','.join(map(str, feat_display))}}} was best, accuracy is {best_acc_this_level * 100:.1f}%\n")
+        print(f"\nFeature set {{{','.join(map(str, feat_display))}}} was best, accuracy is {best_acc_level * 100:.1f}%\n")
 
     best_display = sorted(f + 1 for f in best_overall_set)
     print(f"\nFinished search!! The best feature subset is {{{','.join(map(str, best_display))}}}, "
@@ -74,19 +86,19 @@ def forward_selection(labels, features):
     return best_overall_set, best_overall_acc
 
 
-def backward_elimination(labels, features):
+def backward_elimination(labels, features): # The same as forward selection, but start with the full set and remove features instead of adding them.
     # https://www.geeksforgeeks.org/machine-learning/sequential-feature-selection/
     
-    n, total_features = features.shape
+    total_features = features.shape[1]
     current_set = set(range(total_features))
     best_overall_set = set(current_set)
     best_overall_acc = loo_accuracy(labels, features, current_set)
 
     print(f"\nBeginning Backward Elimination search.\n")
 
-    for level in range(total_features - 1):
-        best_acc_this_level = -1
-        worst_feature = None
+    for _ in range(total_features - 1):
+        best_acc_level = -1
+        worst_feat = None
 
         for f in current_set:
             candidate = current_set - {f}   # Remove this feature
@@ -94,20 +106,20 @@ def backward_elimination(labels, features):
             feat_display = sorted(x + 1 for x in candidate)
             print(f"        Using feature(s) {{{','.join(map(str, feat_display))}}} accuracy is {acc * 100:.1f}%")
 
-            if acc > best_acc_this_level:
-                best_acc_this_level = acc
-                worst_feature = f
+            if acc > best_acc_level:
+                best_acc_level = acc
+                worst_feat = f
 
-        current_set = current_set - {worst_feature}
+        current_set = current_set - {worst_feat}
         feat_display = sorted(f + 1 for f in current_set)
 
-        if best_acc_this_level > best_overall_acc:
-            best_overall_acc = best_acc_this_level
+        if best_acc_level > best_overall_acc:
+            best_overall_acc = best_acc_level
             best_overall_set = set(current_set)
         else:
             print(f"\n(Warning, Accuracy has decreased! Continuing search in case of local maxima)")
 
-        print(f"\nFeature set {{{','.join(map(str, feat_display))}}} was best, accuracy is {best_acc_this_level * 100:.1f}%\n")
+        print(f"\nFeature set {{{','.join(map(str, feat_display))}}} was best, accuracy is {best_acc_level * 100:.1f}%\n")
 
     best_display = sorted(f + 1 for f in best_overall_set)
     print(f"\nFinished search!! The best feature subset is {{{','.join(map(str, best_display))}}}, "
